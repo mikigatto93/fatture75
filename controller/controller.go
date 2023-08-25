@@ -41,7 +41,7 @@ func FillCalcSheet(xmlFilePath string, newFileName string) error {
 	return err // even if it's nil
 }
 
-func GenerateNewQuote(calcFilePath string) error {
+func GenerateNewQuote(calcFilePath string, apply75Discount bool) error {
 	err := model.LoadRules("special_rules.json")
 	if err != nil {
 		fmt.Println(err)
@@ -57,11 +57,16 @@ func GenerateNewQuote(calcFilePath string) error {
 	doc := model.NewDocument(fattureincloud.IssuedDocumentTypes.QUOTE, collector)
 	doc.FillItems()
 
-	r, err := api.CreateDocument(doc)
+	if apply75Discount {
+		doc.ApplyDiscount(75)
+	}
+
+	_, err = api.CreateDocument(doc)
 
 	if err != nil {
-		return fmt.Errorf("%v - Full HTTP response: %v", err, r)
+		//TODO: IMPEMENT LOGGING
+		return fmt.Errorf("Error after sending the HTTP request, more info on the log file")
+	} else {
+		return nil
 	}
-	return nil
-
 }

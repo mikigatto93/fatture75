@@ -23,8 +23,10 @@ type Fixture struct {
 	Quantity    int
 	Description string
 	Type        string
-	Price       float32
+	Price       float32 // total price
+	VatCode     vatCode
 	Options     []option
+	Group       FixtureGroup
 }
 
 func (f Fixture) GetExtensiveDescription() string {

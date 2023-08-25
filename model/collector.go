@@ -44,18 +44,19 @@ func getCellFloat(file *excelize.File, sheet string, cellCoords string) (float32
 }
 
 type DataCollector struct {
-	filePath      string
-	file          *excelize.File
-	Costumer      CostumerData
-	Products      []Fixture
-	OtherExpenses []OtherExpenses
+	filePath             string
+	file                 *excelize.File
+	Costumer             CostumerData
+	Products             []Fixture
+	ProfessionalExpenses ServiceExpense
+	OtherExpenses        []ServiceExpense
 }
 
 func NewDataCollector(filePath string) *DataCollector {
 	col := DataCollector{
 		filePath:      filePath,
 		Products:      make([]Fixture, 0),
-		OtherExpenses: make([]OtherExpenses, 0),
+		OtherExpenses: make([]ServiceExpense, 0),
 	}
 	return &col
 }
@@ -106,9 +107,7 @@ func (c *DataCollector) loadProducts() {
 		fixtureGroup := c.getRowFixtureGroup(i)
 
 		if fixtureGroup != "" {
-			headers := FixtureHeadersMap[fixtureGroup]
-
-			prod, err := c.buildFixture(i, headers)
+			prod, err := c.buildFixture(i, fixtureGroup)
 
 			if err != nil {
 				fmt.Println(fmt.Errorf("error in loading the product line %d: %v", i, err))
@@ -140,8 +139,7 @@ func (c *DataCollector) loadComplementaryWorks(expenseType string) {
 				if err2 != nil {
 					fmt.Println(fmt.Errorf("error in loading the expense line %d: %v", i, err2))
 				} else {
-
-					ex := OtherExpenses{
+					ex := ServiceExpense{
 						Price: p,
 
 						Description: ApplyRules(desc, i, OtherExpenseHeaders.DescriptionCol, Check1Sheet),
@@ -149,7 +147,11 @@ func (c *DataCollector) loadComplementaryWorks(expenseType string) {
 						Type: expenseType,
 					}
 
-					c.OtherExpenses = append(c.OtherExpenses, ex)
+					if i != ProfessionalExpensesRow {
+						c.OtherExpenses = append(c.OtherExpenses, ex)
+					} else {
+						c.ProfessionalExpenses = ex
+					}
 				}
 			}
 		}
@@ -170,7 +172,7 @@ func (c *DataCollector) loadOptionalServices(expenseType string) {
 				if err2 != nil {
 					fmt.Println(fmt.Errorf("error in loading the expense line %d: %v", i, err2))
 				} else {
-					ex := OtherExpenses{
+					ex := ServiceExpense{
 						Price: p,
 
 						Description: ApplyRules(desc, i, OtherExpenseHeaders.DescriptionCol, Check1Sheet),
@@ -199,7 +201,9 @@ func (c *DataCollector) getRowFixtureGroup(rowIndex int) FixtureGroup {
 	return ""
 }
 
-func (c *DataCollector) buildFixture(rowIndex int, headers FixtureHeaders) (Fixture, error) {
+func (c *DataCollector) buildFixture(rowIndex int, fixtureGroup FixtureGroup) (Fixture, error) {
+
+	headers := FixtureHeadersMap[fixtureGroup]
 
 	h, err1 := getCellInt(c.file,
 		SerramentiSheet, cell(rowIndex, headers.HeightCol))
@@ -239,6 +243,7 @@ func (c *DataCollector) buildFixture(rowIndex int, headers FixtureHeaders) (Fixt
 		Type: ApplyRules(t, rowIndex, headers.TypeCol, SerramentiSheet),
 
 		Options: nil,
+		Group:   fixtureGroup,
 	}
 
 	return prod, nil

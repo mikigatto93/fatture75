@@ -33,4 +33,6 @@ const (
 
 	MinOptionalServicesRow int = 39
 	MaxOptionalServicesRow int = 43
+
+	ProfessionalExpensesRow int = 35
 )

@@ -82,7 +82,7 @@ func (c *XmlCollector) parseData(data rawXmlDocumentData) []XmlProductData {
 			ProductId: p.ProductId,
 			Height:    h,
 			Width:     w,
-			Price:     p.QuantityListPrice,
+			Price:     p.QuantityListPrice, // total price
 			Quantity:  p.Quantity,
 		}
 

@@ -19,6 +19,9 @@ func GetMainWindowView(w fyne.Window) *fyne.Container {
 	fillCalcSheetTextBox := widget.NewEntry()
 	generateQuoteTextBox := widget.NewEntry()
 
+	checkApply75Discount := widget.NewCheck("", func(value bool) {})
+	checkApply75Discount.Checked = true
+
 	fillCalcSheetForm := container.New(layout.NewFormLayout(),
 		widget.NewLabel("Percorso del file Antenore: "), antenoreFilePathTextBox,
 
@@ -60,10 +63,11 @@ func GetMainWindowView(w fyne.Window) *fyne.Container {
 	generateQuoteForm := container.New(layout.NewFormLayout(),
 		widget.NewLabel("Nome del file di calcolo: "), generateQuoteTextBox,
 		widget.NewLabel("Oppure seleziona il file: "), openFileDialogButton,
+		widget.NewLabel("Applica sconto 75: "), checkApply75Discount,
 		layout.NewSpacer(), widget.NewButton("Esegui",
 			func() {
 				if validateEmptyTextBox(generateQuoteTextBox.Text, w) {
-					err := controller.GenerateNewQuote(generateQuoteTextBox.Text)
+					err := controller.GenerateNewQuote(generateQuoteTextBox.Text, checkApply75Discount.Checked)
 
 					if err != nil {
 						dialog.ShowError(err, w)

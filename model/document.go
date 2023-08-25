@@ -1,30 +1,49 @@
 package model
 
-import fattureincloud "github.com/fattureincloud/fattureincloud-go-sdk/v2/model"
+import (
+	"math"
 
-/*
-type DocumentBuilder struct {
-	collector       *DataCollector
+	fattureincloud "github.com/fattureincloud/fattureincloud-go-sdk/v2/model"
+)
 
+type vatCode int
+
+const (
+	VatCode10 vatCode = 3
+	VatCode22 vatCode = 0
+)
+
+var vatCodeGroupMap = map[FixtureGroup]vatCode{
+	"A": VatCode22,
+	"B": VatCode22,
+	"C": VatCode10,
+	"D": VatCode10,
 }
 
-func NewDocumentBuilder(collector *DataCollector) *DocumentBuilder {
-	return &DocumentBuilder{
-		collector: collector,
+func getVatFromVatCode(code vatCode) float32 {
+	if code == VatCode10 {
+		return 10
+	} else if code == VatCode22 {
+		return 22
 	}
+
+	return 0
+
 }
-*/
 
 type Document struct {
-	Client         *fattureincloud.Entity
-	collector      *DataCollector
-	IssuedDocument fattureincloud.IssuedDocument
+	Client             *fattureincloud.Entity
+	IssuedDocument     fattureincloud.IssuedDocument
+	Fixtures           []Fixture
+	Expenses           []ServiceExpense
+	TotalBeforeTaxes22 float32
+	TotalBeforeTaxes10 float32
+	Total              float32
 }
 
 func NewDocument(docType fattureincloud.IssuedDocumentType, collector *DataCollector) *Document {
 
 	doc := Document{
-		collector:      collector,
 		IssuedDocument: *fattureincloud.NewIssuedDocument(),
 	}
 
@@ -41,36 +60,131 @@ func NewDocument(docType fattureincloud.IssuedDocumentType, collector *DataColle
 		SetCurrency(*fattureincloud.NewCurrency().SetId("EUR")).
 		SetLanguage(*fattureincloud.NewLanguage().SetCode("it").SetName("italiano"))
 
+	doc.fillFixtureList(collector)
+	doc.fillExpenseList(collector)
+
 	return &doc
 }
 
+func (d *Document) fillFixtureList(collector *DataCollector) {
+
+	for _, fixture := range collector.Products {
+		fixture.VatCode = vatCodeGroupMap[fixture.Group]
+
+		if fixture.VatCode == VatCode10 {
+			d.TotalBeforeTaxes10 += fixture.Price
+		} else if fixture.VatCode == VatCode22 {
+			d.TotalBeforeTaxes22 += fixture.Price
+		}
+
+		d.Fixtures = append(d.Fixtures, fixture)
+
+	}
+}
+
+func (d *Document) fillExpenseList(collector *DataCollector) {
+
+	for _, expense := range collector.OtherExpenses {
+		expense.VatCode = VatCode10
+		d.TotalBeforeTaxes10 += expense.Price
+		d.Expenses = append(d.Expenses, expense)
+	}
+
+	// special professional expenses must be taxed with vat at 22
+	// it does not concur to the TotalBeforeTaxes22 as it must be taxed at 22
+	profExpenses := collector.ProfessionalExpenses
+	profExpenses.VatCode = VatCode22
+	d.Expenses = append(d.Expenses, profExpenses)
+}
+
 func (d *Document) FillItems() {
+	d.applyVatCheck()
+
 	itemsList := []fattureincloud.IssuedDocumentItemsListItem{}
 
-	//fills fixture
-	for _, fixture := range d.collector.Products {
+	//fill fixture
+	for _, fixture := range d.Fixtures {
 		newItem := *fattureincloud.NewIssuedDocumentItemsListItem().
 			SetName(fixture.Type).
 			SetDescription(fixture.GetExtensiveDescription()).
 			SetNetPrice(fixture.Price / float32(fixture.Quantity)).
 			SetDiscount(0).
 			SetQty(float32(fixture.Quantity)).
-			SetVat(*fattureincloud.NewVatType().SetId(3)) // 10%
+			SetVat(*fattureincloud.NewVatType().SetId(int32(fixture.VatCode)))
 		itemsList = append(itemsList, newItem)
 	}
 
-	//fills expenses
-	for _, expense := range d.collector.OtherExpenses {
+	//fill expenses
+	for _, expense := range d.Expenses {
 		newItem := *fattureincloud.NewIssuedDocumentItemsListItem().
 			SetName(expense.Type).
 			SetDescription(expense.Description).
 			SetNetPrice(expense.Price).
 			SetDiscount(0).
 			SetQty(1).
-			SetVat(*fattureincloud.NewVatType().SetId(3)) // 10%
+			SetVat(*fattureincloud.NewVatType().SetId(int32(expense.VatCode)))
 
 		itemsList = append(itemsList, newItem)
 	}
 
 	d.IssuedDocument.SetItemsList(itemsList)
+}
+
+func (d *Document) applyVatCheck() {
+	// see https://www.commercialistatelematico.com/articoli/2023/03/beni-significativi-problematiche-iva.html
+
+	if d.TotalBeforeTaxes22-d.TotalBeforeTaxes10 > 0 {
+		deduction := ServiceExpense{
+			Description: "Detrazione per diversa imputazione IVA beni significativi",
+			Type:        "Detrazione",
+			Price:       -d.TotalBeforeTaxes10,
+			VatCode:     VatCode22,
+		}
+
+		addition := ServiceExpense{
+			Description: "Riaddebito per diversa imputazione IVA agevolata beni significativi",
+			Type:        "Riaddebito",
+			Price:       d.TotalBeforeTaxes10,
+			VatCode:     VatCode10,
+		}
+
+		d.Expenses = append(d.Expenses, deduction, addition)
+	} else {
+		deduction := ServiceExpense{
+			Description: "Detrazione per diversa imputazione IVA beni significativi",
+			Type:        "Detrazione",
+			Price:       -d.TotalBeforeTaxes22,
+			VatCode:     VatCode22,
+		}
+
+		addition := ServiceExpense{
+			Description: "Riaddebito per diversa imputazione IVA agevolata beni significativi",
+			Type:        "Riaddebito",
+			Price:       d.TotalBeforeTaxes22,
+			VatCode:     VatCode10,
+		}
+
+		d.Expenses = append(d.Expenses, deduction, addition)
+	}
+
+	d.calculateTotal()
+}
+
+func (d *Document) calculateTotal() {
+	for _, fix := range d.Fixtures {
+		d.Total +=
+			fix.Price + (fix.Price * getVatFromVatCode(fix.VatCode) / 100)
+	}
+
+	for _, ex := range d.Expenses {
+		d.Total +=
+			ex.Price + (ex.Price * getVatFromVatCode(ex.VatCode) / 100)
+	}
+
+}
+
+func (d *Document) ApplyDiscount(amount float32) {
+	discount := -amount * d.Total / 100
+	roundedDiscount := math.Round(float64(discount*100)) / 100
+	d.IssuedDocument.SetAmountDueDiscount(float32(roundedDiscount))
 }

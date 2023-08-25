@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fatture75/model"
+	"fmt"
 	"net/http"
 
 	fattureincloudapi "github.com/fattureincloud/fattureincloud-go-sdk/v2/api"
@@ -37,7 +38,11 @@ func (fa *FattureInCloudApi) CreateDocument(
 		fa.authContext, fa.companyId,
 	).CreateIssuedDocumentRequest(createIssuedDocumentRequest).Execute()
 
+	if err != nil {
+		//json.NewEncoder(os.Stdout).Encode(resp)
+		fmt.Println(r)
+	}
+
 	return r, err
 
-	//json.NewEncoder(os.Stdout).Encode(resp)
 }
